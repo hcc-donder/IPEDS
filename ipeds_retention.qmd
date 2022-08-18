@@ -1,0 +1,241 @@
+---
+format: pdf
+params:
+    my_unitid: 198668
+    ipeds_data_year: 20
+---
+
+
+```{r include=FALSE}
+ipeds_year <- 2000 + params$ipeds_data_year
+file_year <- paste0(as.character(ipeds_year),as.character(params$ipeds_data_year+1))
+file_year_dash <- paste0(as.character(ipeds_year),"-",as.character(params$ipeds_data_year+1))
+```
+
+---
+title: "`r paste0('IPEDS Retention Comparison ', file_year_dash)`" 
+
+---
+
+```{r initialize, include=FALSE, results='asis'}
+# title: "`r paste0('IPEDS Retention Comparison ', as.character(2000 + params$ipeds_data_year),'-',as.character(params$ipeds_data_year+1))`" 
+library(DBI)
+#library(odbc)
+library(dplyr)
+library(magrittr)
+library(tidyr)
+#library(stringr)
+library(ggplot2)
+library(ggdist)
+
+file = paste0("IPEDS", file_year, ".accdb")
+connection <- dbConnect(
+    odbc::odbc(), 
+    .connection_string = paste0(
+        "Driver={Microsoft Access Driver (*.mdb, *.accdb)};",
+        "Dbq=", file.path(getwd(), file), ";",
+        "Uid=Admin;Pwd=;"
+      )
+)
+
+#mdb_tables_yr <- paste0("Tables", params$ipeds_data_year)
+# df_tables <- dbReadTable(connection , "Tables20")
+
+# dbListTables(connection)
+
+source("code/peers.R")
+
+my_peers_ncccs <- get_peer_group(connection, "peer_sets/2-year-NC-public.R") %>%
+    select( UNITID, 
+            OPEID, 
+            INSTNM, 
+            INSTSIZE = "(INSTSIZE) Institution size category", 
+            C18SZSET = "(C18SZSET) Carnegie Classification 2018: Size and Setting",
+            Peer)
+
+my_peers_2year <- get_peer_group(connection, "peer_sets/2-year-public.R") %>%
+    select( UNITID, 
+            OPEID, 
+            INSTNM, 
+            INSTSIZE = "(INSTSIZE) Institution size category", 
+            C18SZSET = "(C18SZSET) Carnegie Classification 2018: Size and Setting",
+            Peer)
+
+mdb_EF_yr <- paste0("EF", ipeds_year)
+df_ef <- dbReadTable(connection, paste0(mdb_EF_yr,"D")) %>% 
+    select( UNITID,
+            FT_Cohort = RRFTCTA,
+            FT_Retained = RET_NMF,
+            FT_Retention = RET_PCF,
+            PT_Cohort = RRPTCTA,
+            PT_Retained = RET_NMP,
+            PT_Retention = RET_PCP)
+
+df_results_ncccs <- my_peers_ncccs %>%
+    left_join( df_ef )
+
+df_results_2year <- my_peers_2year %>%
+    left_join( df_ef )
+
+df_results_self <- df_results_ncccs %>%
+    filter( UNITID == params$my_unitid )
+df_results_ncccs_others <- df_results_ncccs %>%
+    filter( UNITID != params$my_unitid )
+df_results_2year_others <- df_results_2year %>%
+    filter( UNITID != params$my_unitid )
+
+
+# retention_summary <- df_results_ncccs %>% 
+#     mutate(C18SZSET="All NCCCS Schools") %>%
+#     group_by(C18SZSET) %>% 
+#     summarise(Retention_FT=mean(FT_Retention, na.rm=TRUE),
+#               Retention_FT_StdDev=sd(FT_Retention, na.rm=TRUE),
+#               Retention_FT_Q25=quantile(FT_Retention, .25, na.rm=TRUE),
+#               Retention_FT_Q50=quantile(FT_Retention, .50, na.rm=TRUE),
+#               Retention_FT_Q75=quantile(FT_Retention, .75, na.rm=TRUE),
+#               Retention_PT=mean(PT_Retention, na.rm=TRUE),
+#               Retention_PT_StdDev=sd(PT_Retention, na.rm=TRUE),
+#               Retention_PT_Q25=quantile(PT_Retention, .25, na.rm=TRUE),
+#               Retention_PT_Q50=quantile(PT_Retention, .50, na.rm=TRUE),
+#               Retention_PT_Q75=quantile(PT_Retention, .75, na.rm=TRUE),
+#               Schools=n_distinct(UNITID),
+#               .groups="keep"
+#               ) %>%
+#     ungroup() %>%
+#     mutate_if(is.numeric, round, 2) %>%
+#     mutate(Sort_Val = paste0("ZZZ",C18SZSET),
+#            Self = "")
+# 
+# my_name = df_results_self %$% INSTNM
+# 
+# retention_summary_grp <- df_results_ncccs %>% 
+#     group_by(C18SZSET,Peer) %>% 
+#     summarise(Retention_FT=mean(FT_Retention, na.rm=TRUE),
+#               Retention_FT_StdDev=sd(FT_Retention, na.rm=TRUE),
+#               Retention_FT_Q25=quantile(FT_Retention, .25, na.rm=TRUE),
+#               Retention_FT_Q50=quantile(FT_Retention, .50, na.rm=TRUE),
+#               Retention_FT_Q75=quantile(FT_Retention, .75, na.rm=TRUE),
+#               Retention_PT=mean(PT_Retention, na.rm=TRUE),
+#               Retention_PT_StdDev=sd(PT_Retention, na.rm=TRUE),
+#               Retention_PT_Q25=quantile(PT_Retention, .25, na.rm=TRUE),
+#               Retention_PT_Q50=quantile(PT_Retention, .50, na.rm=TRUE),
+#               Retention_PT_Q75=quantile(PT_Retention, .75, na.rm=TRUE),
+#               Schools=n_distinct(UNITID),
+#               .groups="keep") %>%
+#     ungroup() %>%
+#     mutate_if(is.numeric, round, 2) %>%
+#     mutate(Sort_Val = C18SZSET) %>%
+#     mutate_at(vars(contains("_Q")), ~ if_else(Peer, ., NA_real_)) %>%
+#     mutate(C18SZSET = case_when(
+#                Peer ~ C18SZSET,
+#                TRUE ~ my_name),
+#            Self = if_else(Peer,"","*")) %>%
+# 
+#     bind_rows(
+#         retention_summary
+#     ) %>%
+#   
+#     arrange(Sort_Val,Self) %>%
+#     select(-c(Sort_Val,Peer))
+
+createPlot <- function(df, y, Title) {
+    #z <- "FT_Retention"
+    y <- enquo(y)
+    
+    College_Grp <- df_results_self %$% C18SZSET
+    College_Ret <- df_results_self %>% summarise(avg=mean(!!y, na.rm=TRUE))
+
+    counts <- df %>% group_by(C18SZSET) %>% tally
+    avg_grp <- df %>% group_by(C18SZSET) %>% filter(C18SZSET == College_Grp) %>% summarise(avg=mean(!!y, na.rm=TRUE)) %$% avg
+    avg <- df %>% summarise(avg=mean(!!y, na.rm=TRUE)) %$% avg
+    
+    College_Color <- case_when( # 
+        College_Ret >= avg && College_Ret >= avg_grp ~ "Green",
+        College_Ret >= avg_grp ~ "Yellow",
+        College_Ret >= avg ~ "Orange",
+        TRUE ~ "Red"
+    )
+    
+    ggplot(df, aes(x = C18SZSET, y = !!y)) +
+        geom_hline(yintercept=avg, color="grey") + # FT_Retention
+        ggdist::stat_halfeye(
+            adjust = .5,
+            width = .6,
+            .width = 0,
+            justification = -.3,
+            point_colour = NA,
+            na.rm=TRUE) +
+        geom_boxplot(
+            width = .25, 
+            outlier.shape = NA,
+            na.rm=TRUE
+          ) +
+        scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 15)) +
+        geom_point(
+            size = 1.3,
+            alpha = .3,
+            position = position_jitter(
+              seed = 1, width = .1
+            ),
+            na.rm=TRUE
+            #,aes(color=Peer)
+          ) +
+        geom_point(data=df_results_self, aes(x=C18SZSET,y = !!y), color=College_Color, size=5) +
+        coord_cartesian(xlim = c(1.2, NA), clip = "off") +
+        labs(title = Title, # "Full-time Retention (NCCCS)",
+               x = "Institution Type",
+               y = "Retention (%)") +
+        geom_text(data=counts, aes(x=C18SZSET, y = 3, label=n), size=3)
+}
+
+College_Grp <- df_results_self$C18SZSET
+College_Name <- df_results_self$INSTNM
+
+dbDisconnect(connection)
+```
+
+The following tables and charts are generated from the `r file_year_dash` IPEDS 
+Fall Enrollment data. The data is divided into reports on all the NCCCS schools
+as well as all 2-year public schools. 
+
+`r College_Name` is identified in the following charts with a large colored dot.
+Dot colors are determined according the rules below:
+
+- Green - the college is greater than both the category and overall averages
+- Yellow - the college is greater than just the category average
+- Orange - the college is greater than just the overall average
+- Red - the college is less than both the category and overall averages
+
+The average retention rate for all full-time students at NCCCS and 2-year schools are:
+
+| Category   | Overall Retention (%) | Category Retention (%) |
+|:-----------|:---------------------:|:----------------------:|
+| All NCCCS  | `r round(mean(df_results_ncccs$FT_Retention, na.rm=TRUE),2)` | `r round(mean(df_results_ncccs[df_results_ncccs$C18SZSET == College_Grp,"FT_Retention"], na.rm=TRUE),2)` |
+| All 2-Year | `r round(mean(df_results_2year$FT_Retention, na.rm=TRUE),2)` | `r round(mean(df_results_2year[df_results_2year$C18SZSET == College_Grp,"FT_Retention"], na.rm=TRUE),2)` |
+| `r College_Name` | `r df_results_self$FT_Retention`                 | `r df_results_self$FT_Retention` |
+
+
+The average retention rate for all part-time students at NCCCS and 2-year schools are:
+
+| Category   |  Overall Retention (%) | Category Retention (%) |
+|------------|:----------------------:|:----------------------:|
+| All NCCCS  | `r round(mean(df_results_ncccs$PT_Retention, na.rm=TRUE),2)` | `r round(mean(df_results_ncccs[df_results_ncccs$C18SZSET == College_Grp,"PT_Retention"], na.rm=TRUE),2)` |
+| All 2-Year | `r round(mean(df_results_2year$PT_Retention, na.rm=TRUE),2)` | `r round(mean(df_results_2year[df_results_2year$C18SZSET == College_Grp,"PT_Retention"], na.rm=TRUE),2)` |
+| `r College_Name` | `r df_results_self$PT_Retention`                 | `r df_results_self$PT_Retention`                 |
+
+
+## Full-time Retention Charts
+
+```{r ft_retention_charts, echo=FALSE, warning=FALSE}
+df_results_ncccs %>% createPlot(FT_Retention, "Full-time Retention (All NCCCS Schools)")
+
+df_results_2year %>% createPlot(FT_Retention, "Full-time Retention (All 2-year Schools)")
+```
+
+# Part-time Retention Charts
+
+```{r pt_retention_charts, echo=FALSE, warning=FALSE}
+df_results_ncccs %>% createPlot(PT_Retention, "Part-time Retention (All NCCCS Schools)")
+
+df_results_2year %>% createPlot(PT_Retention, "Part-time Retention (All 2-Year Schools)")
+```
