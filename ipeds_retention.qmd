@@ -8,12 +8,12 @@ params:
 
 ```{r include=FALSE}
 ipeds_year <- 2000 + params$ipeds_data_year
-file_year <- paste0(as.character(ipeds_year),as.character(params$ipeds_data_year+1))
-file_year_dash <- paste0(as.character(ipeds_year),"-",as.character(params$ipeds_data_year+1))
+file_year <- glue::glue("{ipeds_year}{params$ipeds_data_year+1}")
+file_year_dash <- glue::glue("{ipeds_year}-{params$ipeds_data_year+1}")
 ```
 
 ---
-title: "`r paste0('IPEDS Retention Comparison ', file_year_dash)`" 
+title: "`r glue::glue('IPEDS Retention Comparison {file_year_dash}')`" 
 
 ---
 
@@ -28,12 +28,12 @@ library(tidyr)
 library(ggplot2)
 library(ggdist)
 
-file = paste0("IPEDS", file_year, ".accdb")
+file = glue::glue("IPEDS{file_year}.accdb")
 connection <- dbConnect(
     odbc::odbc(), 
-    .connection_string = paste0(
-        "Driver={Microsoft Access Driver (*.mdb, *.accdb)};",
-        "Dbq=", file.path(getwd(), file), ";",
+    .connection_string = glue::glue(
+        "Driver={{Microsoft Access Driver (*.mdb, *.accdb)}};",
+        "Dbq={file.path(getwd(), file)};",
         "Uid=Admin;Pwd=;"
       )
 )
@@ -61,8 +61,8 @@ my_peers_2year <- get_peer_group(connection, "peer_sets/2-year-public.R") %>%
             C18SZSET = "(C18SZSET) Carnegie Classification 2018: Size and Setting",
             Peer)
 
-mdb_EF_yr <- paste0("EF", ipeds_year)
-df_ef <- dbReadTable(connection, paste0(mdb_EF_yr,"D")) %>% 
+mdb_EF_yr <- glue::glue("EF{ipeds_year}")
+df_ef <- dbReadTable(connection, glue::glue("{mdb_EF_yr}D")) %>% 
     select( UNITID,
             FT_Cohort = RRFTCTA,
             FT_Retained = RET_NMF,
@@ -84,59 +84,6 @@ df_results_ncccs_others <- df_results_ncccs %>%
 df_results_2year_others <- df_results_2year %>%
     filter( UNITID != params$my_unitid )
 
-
-# retention_summary <- df_results_ncccs %>% 
-#     mutate(C18SZSET="All NCCCS Schools") %>%
-#     group_by(C18SZSET) %>% 
-#     summarise(Retention_FT=mean(FT_Retention, na.rm=TRUE),
-#               Retention_FT_StdDev=sd(FT_Retention, na.rm=TRUE),
-#               Retention_FT_Q25=quantile(FT_Retention, .25, na.rm=TRUE),
-#               Retention_FT_Q50=quantile(FT_Retention, .50, na.rm=TRUE),
-#               Retention_FT_Q75=quantile(FT_Retention, .75, na.rm=TRUE),
-#               Retention_PT=mean(PT_Retention, na.rm=TRUE),
-#               Retention_PT_StdDev=sd(PT_Retention, na.rm=TRUE),
-#               Retention_PT_Q25=quantile(PT_Retention, .25, na.rm=TRUE),
-#               Retention_PT_Q50=quantile(PT_Retention, .50, na.rm=TRUE),
-#               Retention_PT_Q75=quantile(PT_Retention, .75, na.rm=TRUE),
-#               Schools=n_distinct(UNITID),
-#               .groups="keep"
-#               ) %>%
-#     ungroup() %>%
-#     mutate_if(is.numeric, round, 2) %>%
-#     mutate(Sort_Val = paste0("ZZZ",C18SZSET),
-#            Self = "")
-# 
-# my_name = df_results_self %$% INSTNM
-# 
-# retention_summary_grp <- df_results_ncccs %>% 
-#     group_by(C18SZSET,Peer) %>% 
-#     summarise(Retention_FT=mean(FT_Retention, na.rm=TRUE),
-#               Retention_FT_StdDev=sd(FT_Retention, na.rm=TRUE),
-#               Retention_FT_Q25=quantile(FT_Retention, .25, na.rm=TRUE),
-#               Retention_FT_Q50=quantile(FT_Retention, .50, na.rm=TRUE),
-#               Retention_FT_Q75=quantile(FT_Retention, .75, na.rm=TRUE),
-#               Retention_PT=mean(PT_Retention, na.rm=TRUE),
-#               Retention_PT_StdDev=sd(PT_Retention, na.rm=TRUE),
-#               Retention_PT_Q25=quantile(PT_Retention, .25, na.rm=TRUE),
-#               Retention_PT_Q50=quantile(PT_Retention, .50, na.rm=TRUE),
-#               Retention_PT_Q75=quantile(PT_Retention, .75, na.rm=TRUE),
-#               Schools=n_distinct(UNITID),
-#               .groups="keep") %>%
-#     ungroup() %>%
-#     mutate_if(is.numeric, round, 2) %>%
-#     mutate(Sort_Val = C18SZSET) %>%
-#     mutate_at(vars(contains("_Q")), ~ if_else(Peer, ., NA_real_)) %>%
-#     mutate(C18SZSET = case_when(
-#                Peer ~ C18SZSET,
-#                TRUE ~ my_name),
-#            Self = if_else(Peer,"","*")) %>%
-# 
-#     bind_rows(
-#         retention_summary
-#     ) %>%
-#   
-#     arrange(Sort_Val,Self) %>%
-#     select(-c(Sort_Val,Peer))
 
 createPlot <- function(df, y, Title) {
     #z <- "FT_Retention"
